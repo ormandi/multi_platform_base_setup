@@ -1,0 +1,54 @@
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_library")
+load(":transitions.bzl", "manylinux_library")
+
+# Reused detection of architecture and C++ standard library.
+cc_library(
+    name = "stdlib_info",
+    srcs = ["stdlib_info.cc"],
+    hdrs = ["stdlib_info.h"],
+)
+
+# Reused core: fills an absl::flat_hash_set with random integers and reports.
+cc_library(
+    name = "benchmark_lib",
+    srcs = ["benchmark.cc"],
+    hdrs = ["benchmark.h"],
+    deps = [
+        ":stdlib_info",
+        "@abseil-cpp//absl/container:flat_hash_set",
+    ],
+)
+
+# Example binary, linked against libc++ (LLVM). Only built in a libc++ config;
+# it is reported incompatible (and skipped) under stdc++ platforms.
+cc_binary(
+    name = "benchmark",
+    srcs = ["main.cc"],
+    target_compatible_with = ["@llvm//constraints/cxxstdlib:libcxx"],
+    deps = [
+        ":benchmark_lib",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+    ],
+)
+
+# Manylinux-compatible target reusing the same core, always built against
+# stdc++ (GNU) on Linux when --//:manylinux_compatible=True.
+manylinux_library(
+    name = "benchmark_manylinux",
+    actual = ":benchmark_lib",
+)
+
+# Runnable stdc++ proof. libstdc++ is a dynamic runtime here, so linkstatic
+# must be False. Built under a Linux stdc++ platform.
+cc_binary(
+    name = "benchmark_manylinux_bin",
+    srcs = ["main.cc"],
+    linkstatic = False,
+    target_compatible_with = ["@llvm//constraints/cxxstdlib:libstdcxx.17.0.0"],
+    deps = [
+        ":benchmark_lib",
+        "@abseil-cpp//absl/flags:flag",
+        "@abseil-cpp//absl/flags:parse",
+    ],
+)

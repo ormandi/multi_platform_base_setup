@@ -1,0 +1,15 @@
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
+
+# Boolean config parameter. When true, manylinux-compatible targets are built
+# against GNU libstdc++ on Linux (see //src/benchmark:transitions.bzl).
+bool_flag(
+    name = "manylinux_compatible",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
+config_setting(
+    name = "manylinux",
+    flag_values = {":manylinux_compatible": "True"},
+    visibility = ["//visibility:public"],
+)

@@ -1,0 +1,57 @@
+# Predefined target platforms. Cross-compile by selecting one on the command
+# line via --platforms or the matching .bazelrc --config. Versions are pinned
+# explicitly for reproducibility.
+#
+# @platforms//cpu:aarch64 is the canonical value (cpu:arm64 is an alias of it).
+
+LIBC_GNU = "@llvm//constraints/libc:gnu.2.28"  # earliest supported glibc
+
+LIBSTDCXX = "@llvm//constraints/cxxstdlib:libstdcxx.17.0.0"  # GNU libstdc++
+
+# libc++ (LLVM) is the toolchain default, so no cxxstdlib constraint is needed.
+
+platform(
+    name = "macos_arm64_libcxx",
+    constraint_values = [
+        "@platforms//os:macos",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
+platform(
+    name = "linux_arm64_libcxx",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+        LIBC_GNU,
+    ],
+)
+
+platform(
+    name = "linux_arm64_stdcxx",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+        LIBC_GNU,
+        LIBSTDCXX,
+    ],
+)
+
+platform(
+    name = "linux_x86_64_libcxx",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+        LIBC_GNU,
+    ],
+)
+
+platform(
+    name = "linux_x86_64_stdcxx",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:x86_64",
+        LIBC_GNU,
+        LIBSTDCXX,
+    ],
+)

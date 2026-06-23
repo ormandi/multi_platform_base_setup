@@ -1,0 +1,20 @@
+"""Multi-platform Bazel base project with a hermetic LLVM C++20 toolchain.
+
+All toolchain versions are pinned explicitly for reproducibility; they change
+only by editing this file.
+"""
+
+module(name = "multi_platform_base_setup", version = "0.0.0")
+
+bazel_dep(name = "llvm", version = "0.8.9")
+bazel_dep(name = "abseil-cpp", version = "20260526.0")
+bazel_dep(name = "bazel_skylib", version = "1.9.0")
+bazel_dep(name = "platforms", version = "1.1.0")
+bazel_dep(name = "rules_cc", version = "0.2.19")
+
+# Pin the LLVM (and thus libc++) version. .version() is mandatory; the extension
+# exposes its repos as direct deps, so no use_repo() is required.
+llvm_source = use_extension("@llvm//extensions:llvm_source.bzl", "llvm_source")
+llvm_source.version(llvm_version = "21.1.8")
+
+register_toolchains("@llvm//toolchain:all")

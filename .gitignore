@@ -1,0 +1,6 @@
+# Bazel convenience symlinks
+/bazel-*
+
+# Local user overrides
+user.bazelrc
+.bazelrc.local
