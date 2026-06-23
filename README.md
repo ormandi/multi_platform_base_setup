@@ -49,6 +49,30 @@ C++ *runtime* (`libstdc++`, built from the gcc-17 sources) is linked.
 
 Each has a matching `.bazelrc` shortcut, e.g. `--config=linux_x86_64_libcxx`.
 
+## Execution platforms
+
+The **target platform** (above) is what the artifact runs on. The **execution
+platform** is the host running Bazel. Because the toolchain is fully hermetic and
+cross-compiles every target component from source, **any** supported execution
+platform can build **all five** target platforms — the `--config`/`--platforms`
+choice is independent of the host.
+
+Common to every host: `bazelisk` on `PATH` and network access on the first build
+(to fetch prebuilt LLVM and the runtime sources). The first build of a given
+target is slow because libc++/libstdc++/compiler-rt/libunwind are compiled from
+source; afterwards everything is cached.
+
+| Execution platform (host) | Builds all 5 targets | Expectations / extra requirements |
+|---|---|---|
+| macOS / arm64 | yes (cross) | For `stdcxx` (GNU libstdc++) targets, a bash ≥ 4.4 is required — Apple's `/bin/bash` is 3.2 and fails the libstdc++ probe scripts. `.bazelrc` sets this automatically via `build:macos --shell_executable=...` (see note below). Targeting macOS downloads the Apple SDK hermetically from Apple's CDN. |
+| macOS / x86_64 | yes (cross) | Same as macOS / arm64 (bash ≥ 4.4 for `stdcxx`; macOS SDK downloaded hermetically). |
+| Linux / x86_64 | yes | No extra requirements — distro bash is ≥ 4.4. Builds and runs the native `linux_x86_64_*` artifacts directly. |
+| Linux / arm64 | yes | No extra requirements. Builds and runs the native `linux_arm64_*` artifacts directly. |
+
+A cross-built binary only **executes** on a host matching its *target* platform
+(e.g. a `linux_x86_64_stdcxx` binary runs on Linux x86_64, not on the macOS host
+that built it). Building it cross-platform always works; running it does not.
+
 ## Build and run
 
 The example binary `//src/benchmark:benchmark` inserts `--n` random integers
