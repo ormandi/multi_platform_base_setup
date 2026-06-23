@@ -36,42 +36,83 @@ to "latest".
 
 ## Platforms
 
-`clang` is always the compiler; the "stdc++ (GNU)" platforms only change which
-C++ *runtime* (`libstdc++`, built from the gcc-17 sources) is linked.
+`clang` (LLVM 21.1.8) is always the compiler; the choice below only changes which
+C++ standard library and libc are linked. The six target platforms — the
+originally requested OS / CPU / stdlib combinations — are:
 
-| Platform (`//platforms:...`) | OS / CPU | C++ stdlib |
+| Platform (`//platforms:...`) | OS / CPU | C++ stdlib (version) | libc |
+|---|---|---|---|
+| `macos_arm64_libcxx`  | macOS / arm64  | libc++ — LLVM 21.1.8   | system libSystem |
+| `macos_x86_64_libcxx` | macOS / x86_64 | libc++ — LLVM 21.1.8   | system libSystem |
+| `linux_arm64_libcxx`  | Linux / arm64  | libc++ — LLVM 21.1.8   | glibc 2.28 |
+| `linux_x86_64_libcxx` | Linux / x86_64 | libc++ — LLVM 21.1.8   | glibc 2.28 |
+| `linux_arm64_stdcxx`  | Linux / arm64  | libstdc++ — GNU 17.0.0 | glibc 2.28 |
+| `linux_x86_64_stdcxx` | Linux / x86_64 | libstdc++ — GNU 17.0.0 | glibc 2.28 |
+
+Everything (compiler, libc, C++ runtime, compiler-rt, libunwind) is built
+hermetically, so **any** of these can be built from any supported host; the
+`--config`/`--platforms` choice is independent of the machine you build on.
+
+### How to build each platform
+
+The example target depends on the stdlib: `:benchmark` is the libc++ binary,
+`:benchmark_manylinux_bin` is the stdc++ (GNU) binary.
+
+```sh
+# macOS / arm64 / libc++
+bazel build --config=macos_arm64_libcxx   //src/benchmark:benchmark
+# macOS / x86_64 / libc++
+bazel build --config=macos_x86_64_libcxx  //src/benchmark:benchmark
+# Linux / arm64 / libc++ (LLVM)
+bazel build --config=linux_arm64_libcxx   //src/benchmark:benchmark
+# Linux / x86_64 / libc++ (LLVM)
+bazel build --config=linux_x86_64_libcxx  //src/benchmark:benchmark
+# Linux / arm64 / stdc++ (GNU)
+bazel build --config=manylinux --config=linux_arm64_stdcxx   //src/benchmark:benchmark_manylinux_bin
+# Linux / x86_64 / stdc++ (GNU)
+bazel build --config=manylinux --config=linux_x86_64_stdcxx  //src/benchmark:benchmark_manylinux_bin
+```
+
+## What the repo provides vs. what the system must provide
+
+The toolchain is **zero-sysroot and hermetic**: the repo brings the compiler and
+*all* target libraries (CRT, libc, the C++ runtime, compiler-rt, libunwind) — for
+macOS targets it also downloads the Apple SDK from Apple's CDN. The split between
+what the repo supplies and what the surrounding system must supply differs at
+build time vs. run time, and with vs. without musl.
+
+### At build time (the host running Bazel)
+
+- **Provided by the repo:** the entire C/C++ toolchain and every target library,
+  built from source and cached. No system compiler, headers, or sysroot is used.
+- **Required from the host:** `bazelisk` (pins Bazel 9.1.1), network access on the
+  first build, and a POSIX shell. Building the **stdc++ (GNU libstdc++)** targets
+  additionally needs the build shell to be **bash ≥ 4.4** — every Linux host has
+  this; macOS ships bash 3.2 at `/bin/bash`, so on a macOS host build those
+  targets with `--shell_executable=/path/to/bash5`. The libc++ and musl targets
+  have no such requirement.
+
+### At run time (the system executing the produced binary)
+
+| Target | Linkage | Required from the runtime system |
 |---|---|---|
-| `macos_arm64_libcxx` | macOS / arm64 | libc++ (LLVM) |
-| `linux_arm64_libcxx` | Linux / arm64 | libc++ (LLVM) |
-| `linux_arm64_stdcxx` | Linux / arm64 | libstdc++ (GNU) |
-| `linux_x86_64_libcxx` | Linux / x86_64 | libc++ (LLVM) |
-| `linux_x86_64_stdcxx` | Linux / x86_64 | libstdc++ (GNU) |
+| macОS / libc++ | dynamic vs. libSystem | macOS (libSystem ships with the OS) |
+| Linux / libc++ (glibc) | static libc++, dynamic glibc | **glibc ≥ 2.28** + dynamic loader; nothing else (libc++ is linked in) |
+| Linux / stdc++ (glibc) | dynamic glibc + libstdc++ | **glibc ≥ 2.28** + loader. The hermetic `libstdc++.so.6` and `libunwind.so.1` are **shipped by the repo** in the binary's runfiles — deploy them alongside the binary; the system does not need its own libstdc++ |
+| Linux / musl (optional) | fully static (`static-pie`) | **nothing** — no loader, no shared libraries |
 
-Each has a matching `.bazelrc` shortcut, e.g. `--config=linux_x86_64_libcxx`.
+### Without vs. with musl
 
-## Execution platforms
-
-The **target platform** (above) is what the artifact runs on. The **execution
-platform** is the host running Bazel. Because the toolchain is fully hermetic and
-cross-compiles every target component from source, **any** supported execution
-platform can build **all five** target platforms — the `--config`/`--platforms`
-choice is independent of the host.
-
-Common to every host: `bazelisk` on `PATH` and network access on the first build
-(to fetch prebuilt LLVM and the runtime sources). The first build of a given
-target is slow because libc++/libstdc++/compiler-rt/libunwind are compiled from
-source; afterwards everything is cached.
-
-| Execution platform (host) | Builds all 5 targets | Expectations / extra requirements |
-|---|---|---|
-| macOS / arm64 | yes (cross) | For `stdcxx` (GNU libstdc++) targets, a bash ≥ 4.4 is required — Apple's `/bin/bash` is 3.2 and fails the libstdc++ probe scripts. `.bazelrc` sets this automatically via `build:macos --shell_executable=...` (see note below). Targeting macOS downloads the Apple SDK hermetically from Apple's CDN. |
-| macOS / x86_64 | yes (cross) | Same as macOS / arm64 (bash ≥ 4.4 for `stdcxx`; macOS SDK downloaded hermetically). |
-| Linux / x86_64 | yes | No extra requirements — distro bash is ≥ 4.4. Builds and runs the native `linux_x86_64_*` artifacts directly. |
-| Linux / arm64 | yes | No extra requirements. Builds and runs the native `linux_arm64_*` artifacts directly. |
-
-A cross-built binary only **executes** on a host matching its *target* platform
-(e.g. a `linux_x86_64_stdcxx` binary runs on Linux x86_64, not on the macOS host
-that built it). Building it cross-platform always works; running it does not.
+- **Without musl (glibc, the six platforms above):** the produced Linux binary is
+  dynamically linked, so the runtime system must provide **glibc ≥ 2.28** (the
+  C++ runtime is either linked in statically — libc++ — or shipped in runfiles —
+  libstdc++).
+- **With musl (fully static):** the binary is `static-pie` with **no** dynamic
+  loader and **no** `NEEDED` libraries, so it requires **nothing** from the
+  runtime system. Build it with the module's musl platforms, e.g.:
+  ```sh
+  bazel build --platforms=@llvm//platforms:linux_x86_64_musl //src/benchmark:benchmark
+  ```
 
 ## Build and run
 
@@ -130,12 +171,8 @@ bazel build --config=linux_x86_64_stdcxx //src/benchmark:benchmark_manylinux_bin
 
 > `libstdc++` is supported only as a **dynamic** runtime on Linux/glibc, so the
 > stdc++ binary sets `linkstatic = False`. Do not pass `--dynamic_mode=off`.
->
-> **macOS hosts:** building the stdc++ targets runs toolchain probe scripts that
-> need bash ≥ 4.4, but Apple ships bash 3.2 at `/bin/bash`. `.bazelrc` points
-> Bazel at a newer bash via `build:macos --shell_executable=/opt/homebrew/bin/bash`
-> (applied automatically on macOS). Adjust that path if Homebrew is elsewhere.
-> The libc++ targets and Linux hosts do not need this.
+> Building these targets requires bash ≥ 4.4 (see the system-requirements section
+> above).
 
 ## Layout
 
@@ -143,7 +180,7 @@ bazel build --config=linux_x86_64_stdcxx //src/benchmark:benchmark_manylinux_bin
 MODULE.bazel              # toolchain + deps, pinned versions
 .bazelrc                  # C++20 + per-platform / manylinux configs
 BUILD.bazel               # manylinux_compatible bool_flag + config_setting
-platforms/BUILD.bazel     # the 5 target platforms
+platforms/BUILD.bazel     # the 6 target platforms
 src/benchmark/
   stdlib_info.{h,cc}      # arch + C++ stdlib detection (reused)
   benchmark.{h,cc}        # core: flat_hash_set benchmark (reused)

@@ -12,9 +12,22 @@ bazel_dep(name = "bazel_skylib", version = "1.9.0")
 bazel_dep(name = "platforms", version = "1.1.0")
 bazel_dep(name = "rules_cc", version = "0.2.19")
 
-# Pin the LLVM (and thus libc++) version. .version() is mandatory; the extension
-# exposes its repos as direct deps, so no use_repo() is required.
+# Pin the LLVM (and thus libc++) version. .version() is mandatory.
 llvm_source = use_extension("@llvm//extensions:llvm_source.bzl", "llvm_source")
 llvm_source.version(llvm_version = "21.1.8")
+use_repo(llvm_source, "llvm-raw", "llvm_config", "llvm_zlib", "llvm_zstd")
 
-register_toolchains("@llvm//toolchain:all")
+# Register only the exec/target os+arch pairs this project uses (macOS and Linux,
+# arm64 and x86_64) instead of every toolchain the module ships.
+toolchain = use_extension("@llvm//extensions:toolchain.bzl", "toolchain")
+toolchain.exec(arch = "aarch64", os = "macos")
+toolchain.exec(arch = "x86_64", os = "macos")
+toolchain.exec(arch = "aarch64", os = "linux")
+toolchain.exec(arch = "x86_64", os = "linux")
+toolchain.target(arch = "aarch64", os = "macos")
+toolchain.target(arch = "x86_64", os = "macos")
+toolchain.target(arch = "aarch64", os = "linux")
+toolchain.target(arch = "x86_64", os = "linux")
+use_repo(toolchain, "llvm_toolchains")
+
+register_toolchains("@llvm_toolchains//:all")
